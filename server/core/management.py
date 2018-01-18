@@ -1,5 +1,5 @@
 #!_*_coding:utf-8_*_
-
+from core import main
 class ManagementTool:
     """对用户的输入指令进行解析并调用相应的模块处理"""
     def __init__(self,sys_argv):
@@ -9,6 +9,11 @@ class ManagementTool:
     def verify_argv(self):
         """验证指令"""
         if len(self.sys_argv) < 2:
+            self.help_msg()
+
+        cmd = self.sys_argv[1]
+        if not hasattr(self,cmd):
+            print("invalid argument!")
             self.help_msg()
 
     def help_msg(self):
@@ -22,4 +27,11 @@ class ManagementTool:
 
     def execute(self):
         """解析执行命令"""
-        pass
+        cmd = self.sys_argv[1]
+        func = getattr(self,cmd)
+        func()
+
+    def start(self):
+        """start ftp"""
+        server = main.FTPServer(self)
+        server.run_forever()
