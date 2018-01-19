@@ -5,6 +5,9 @@ import json
 
 class FTPClient:
     """Ftp Client"""
+
+    MSG_SIZE = 1024
+
     def __init__(self):
         parser = optparse.OptionParser()
         parser.add_option("-s","--server",dest="server",help="ftp server ip_addr")
@@ -27,6 +30,10 @@ class FTPClient:
         self.sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.sock.connect((self.option.server,self.option.port))
 
+    def get_response(self):
+        data = self.sock.recv(self.MSG_SIZE)
+        return json.loads(data.decode('utf-8'))
+
     def auth(self):
         """用户认证"""
         count = 0
@@ -42,7 +49,14 @@ class FTPClient:
             }
 
             self.sock.send(json.dumps(cmd).encode("utf-8"))
-            self.sock.recv(1024)
+            response = self.get_response()
+            print(response)
+            if response.get('status_code') == 200:
+                return True
+            else:
+                print(response.get("status_msg"))
+            count += 1
+
 
     def interactive(self):
         """处理与Ftpserver的交互"""
