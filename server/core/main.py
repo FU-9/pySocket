@@ -5,6 +5,7 @@ import os
 import configparser
 import hashlib
 import subprocess
+import time
 from conf import settings
 
 
@@ -38,7 +39,11 @@ class FTPServer:
         while True:
             self.request, self.addr = self.sock.accept()
             print("got a new connection from %s:%s" % (self.addr))
-            self.handle()
+            try:
+                self.handle()
+            except Exception as e:
+                print('Error happend with client ,close connection',e)
+                self.request.close()
 
     def handle(self):
         while True:
@@ -107,7 +112,8 @@ class FTPServer:
     def _get(self,data):
         """client download file through this method"""
         filename = data.get('filename')
-        full_path = os.path.join(self.user_obj['home'],filename)
+        full_path = os.path.join(self.user_current_dir,filename)
+        print(full_path)
         if os.path.isfile(full_path):
             filesize = os.stat(full_path).st_size
             self.send_response(301,file_size=filesize)
@@ -135,11 +141,32 @@ class FTPServer:
 
     def _cd(self,data):
         target_dir = data.get('target_dir')
-        full_path = os.path.join(self.user_current_dir,target_dir)
+        full_path = os.path.abspath(os.path.join(self.user_current_dir,target_dir))
         if os.path.isdir(full_path):
-            self.user_current_dir = full_path
-            relative_current_dir = self.user_current_dir.replace(self.user_obj['home'],"")
-            self.send_response(350,current_dir=self.user_current_dir)
+            if full_path.startswith(self.user_obj['home']):
+                self.user_current_dir = full_path
+                relative_current_dir = self.user_current_dir.replace(self.user_obj['home'], "")
+                self.send_response(350, current_dir=relative_current_dir)
+            else:
+                self.send_response(351)
         else:
             self.send_response(351)
+
+    def _put(self,data):
+        local_file = data.get('filename')
+        full_path = os.path.join(self.user_current_dir,local_file)
+        f = open(full_path,"wb")
+        total_size = data.get('file_size')
+        received_size = 0
+        while received_size < total_size:
+            if total_size - received_size < 8192:
+                data = self.request.recv(total_size - received_size)
+            else:
+                data = self.request.recv(8192)
+            received_size += len(data)
+            f.write(data)
+            print(received_size,total_size)
+        else:
+            print('file %s rece done'%local_file)
+            f.close()
 
