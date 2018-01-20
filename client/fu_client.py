@@ -2,6 +2,7 @@
 import optparse
 import socket
 import json
+import os
 
 class FTPClient:
     """Ftp Client"""
@@ -43,16 +44,8 @@ class FTPClient:
             username = input("username>>>:").strip()
             if not username:continue
             password = input("password>>>:").strip()
-
-            cmd = {
-                'action_type':'auth',
-                'username':username,
-                'password':password
-            }
-
-            self.sock.send(json.dumps(cmd).encode("utf-8"))
+            self.send_msg('auth',username=username,password=password)
             response = self.get_response()
-            print(response)
             if response.get('status_code') == 200:
                 self.username = username
                 self.terminal_display = "[%s]>>>:"%self.username
@@ -60,7 +53,6 @@ class FTPClient:
             else:
                 print(response.get("status_msg"))
             count += 1
-
 
     def interactive(self):
         """处理与Ftpserver的交互"""
@@ -124,8 +116,7 @@ class FTPClient:
             self.send_msg('cd',target_dir=target_dir)
             response = self.get_response()
             if response.get('status_code') == 350:
-                self.terminal_display = "[%s]"%response.get('current_dir')
-            print(response)
+                self.terminal_display = "[/%s]"%response.get('current_dir')
 
     def _get(self,cmd_args):
         """download file from ftp server"""
@@ -137,7 +128,7 @@ class FTPClient:
             if response.get('status_code') == 301:
                 file_size = response.get('file_size')
                 received_size = 0
-                with open(filename) as f:
+                with open(filename,'wb') as f:
                     while received_size < file_size:
                         if file_size - received_size < 8192:
                             data = self.sock.recv(file_size - received_size)
@@ -146,10 +137,31 @@ class FTPClient:
                         received_size += len(data)
                         f.write(data)
                     else:
-                        print("---file [%s] rece done, received size [%s]---"%filename,file_size)
+                        print("---file [%s] rece done, received size [%s]---"%(filename,file_size))
                         f.close()
             else:
                 print(response.get('status_msg'))
+
+    def _put(self,cmd_args):
+        if self.parameter_check(cmd_args, min_args=1):
+            local_file = cmd_args[0]
+            if os.path.isfile(local_file):
+                total_size = os.path.getsize(local_file)
+                self.send_msg('put',file_size=total_size,filename=local_file)
+                f = open(local_file,'rb')
+                uploaded_size = 0
+                last_percent = 0
+                for line in f:
+                    self.sock.send(line)
+                    uploaded_size += len(line)
+                    current_percent = int(uploaded_size / total_size * 100)
+                    if current_percent > last_percent:
+                        print('#'*int(current_percent/2) + "{percent}".format(percent=current_percent),end="\r")
+                        last_percent = current_percent
+                else:
+                    print('\n')
+                    print('file upload done'.center(50,'-'))
+                    f.close()
 
 
 if __name__ == "__main__":
