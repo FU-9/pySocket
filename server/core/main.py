@@ -19,7 +19,9 @@ class FTPServer:
         301: "File exist, and this msg include the file size!",
         302: "This msg include the msg size!",
         350: "Dir changed ",
-        351: "Dir doesnt exist"
+        351: "Dir doesnt exist",
+        360: "mkdir success",
+        361: "directory already exists"
     }
 
     MSG_SIZE = 1024 #消息最长1024
@@ -128,7 +130,10 @@ class FTPServer:
 
     def _ls(self,data):
         """run dir command and send result to client"""
-        cmd_obj = subprocess.Popen('ls %s'%self.user_current_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        if os.name == 'nt':
+            cmd_obj = subprocess.Popen('dir %s' % self.user_current_dir, shell=True, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        elif os.name == 'posix':
+            cmd_obj = subprocess.Popen('ls %s'%self.user_current_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         stdout = cmd_obj.stdout.read()
         stderr = cmd_obj.stderr.read()
 
@@ -165,8 +170,31 @@ class FTPServer:
                 data = self.request.recv(8192)
             received_size += len(data)
             f.write(data)
-            print(received_size,total_size)
         else:
-            print('file %s rece done'%local_file)
             f.close()
+
+    def _mkdir(self,data):
+        dir_name = data.get("dir_name")
+        full_path = os.path.join(self.user_current_dir,dir_name)
+        cmd_obj = subprocess.Popen('mkdir %s' % full_path, shell=True, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        stdout = cmd_obj.stdout.read()
+        stderr = cmd_obj.stderr.read()
+        cmd_result = stdout + stderr
+        if not cmd_result:
+            self.send_response(360)
+        else:
+            self.send_response(361,mkdir_msg="mkdir: %s: File exists"%dir_name)
+
+    def _rm(self,data):
+        rm_cmd = data.get("rm_cmd")
+        full_path = os.path.abspath(os.path.join(self.user_current_dir, rm_cmd))
+        cmd_obj = subprocess.Popen('rm -rf %s' % full_path, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout = cmd_obj.stdout.read()
+        stderr = cmd_obj.stderr.read()
+        cmd_result = stdout + stderr
+        if not cmd_result:
+            self.send_response(350)
+        else:
+            self.send_response(351)
+
 
