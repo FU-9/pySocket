@@ -65,6 +65,8 @@ class FTPClient:
                 if hasattr(self,"_%s"%cmd_list[0]):
                     func = getattr(self,"_%s"%cmd_list[0])
                     func(cmd_list[1:])
+                else:
+                    print("-bash: %s: command not found"%cmd_list[0])
 
     def parameter_check(self,args,min_args=None,max_args=None,exact_args=None):
         if min_args:
@@ -93,7 +95,7 @@ class FTPClient:
             msg_data['fill'] = msg_data['fill'].zfill(self.MSG_SIZE - len(bytes_msg))
         self.sock.send(bytes_msg)
 
-    def _ls(self, cmd_args):
+    def _ls(self,cmd_args):
         self.send_msg(action_type='ls')
         response = self.get_response()
         if response.get('status_code') == 302:
@@ -108,7 +110,7 @@ class FTPClient:
                 cmd_result += data
                 received_size += len(data)
             else:
-                print(cmd_result.decode('utf-8'))#mac
+                print(cmd_result.decode('utf-8'))
 
     def _cd(self,cmd_args):
         if self.parameter_check(cmd_args, exact_args=1):
@@ -117,6 +119,8 @@ class FTPClient:
             response = self.get_response()
             if response.get('status_code') == 350:
                 self.terminal_display = "[/%s]"%response.get('current_dir')
+            else:
+                print(response.get('status_msg'))
 
     def _get(self,cmd_args):
         """download file from ftp server"""
@@ -162,6 +166,23 @@ class FTPClient:
                     print('\n')
                     print('file upload done'.center(50,'-'))
                     f.close()
+
+    def _mkdir(self,cmd_args):
+        if self.parameter_check(cmd_args,min_args=1):
+            dir_name = cmd_args[0]
+            self.send_msg(action_type='mkdir',dir_name=dir_name)
+            response = self.get_response()
+            if response.get('status_code') != 360:
+                print(response.get('mkdir_msg'))
+
+    def _rm(self,cmd_args):
+        if self.parameter_check(cmd_args, min_args=1):
+            rm_cmd = cmd_args[0]
+            self.send_msg(action_type='rm',rm_cmd=rm_cmd)
+            reponse = self.get_response()
+            if reponse.get('status_code') != 350:
+                print(reponse.get('status_msg'))
+
 
 
 if __name__ == "__main__":
