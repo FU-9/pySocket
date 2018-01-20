@@ -9,6 +9,8 @@ class FTPClient:
     MSG_SIZE = 1024
 
     def __init__(self):
+        self.username = None
+        self.terminal_display = None
         parser = optparse.OptionParser()
         parser.add_option("-s","--server",dest="server",help="ftp server ip_addr")
         parser.add_option("-P","--port",type="int",dest="port",help="ftp server port")
@@ -52,6 +54,8 @@ class FTPClient:
             response = self.get_response()
             print(response)
             if response.get('status_code') == 200:
+                self.username = username
+                self.terminal_display = "[%s]>>>:"%self.username
                 return True
             else:
                 print(response.get("status_msg"))
@@ -61,7 +65,92 @@ class FTPClient:
     def interactive(self):
         """处理与Ftpserver的交互"""
         if self.auth():
-            pass
+            while True:
+                user_input = input(self.terminal_display).strip()
+                if not user_input:continue
+
+                cmd_list = user_input.split()
+                if hasattr(self,"_%s"%cmd_list[0]):
+                    func = getattr(self,"_%s"%cmd_list[0])
+                    func(cmd_list[1:])
+
+    def parameter_check(self,args,min_args=None,max_args=None,exact_args=None):
+        if min_args:
+            if len(args) < min_args:
+                print("must provide at least %s parameters but %s received"%(min_args,len(args)))
+                return False
+        if max_args:
+            if len(args) > max_args:
+                print("need at most %s paramenters but %s received."%(max_args,len(args)))
+                return False
+        if exact_args:
+            if len(args) != exact_args:
+                print("need at most %s paramenters but %s received." % (exact_args, len(args)))
+                return False
+        return True
+
+    def send_msg(self,action_type,**kwargs):
+        """打包消息并发送到远程"""
+        msg_data = {
+            "action_type":action_type,
+            "fill":""
+        }
+        msg_data.update(kwargs)
+        bytes_msg = json.dumps(msg_data).encode('utf-8')
+        if self.MSG_SIZE > len(bytes_msg):
+            msg_data['fill'] = msg_data['fill'].zfill(self.MSG_SIZE - len(bytes_msg))
+        self.sock.send(bytes_msg)
+
+    def _ls(self, cmd_args):
+        self.send_msg(action_type='ls')
+        response = self.get_response()
+        if response.get('status_code') == 302:
+            cmd_result_size = response.get('cmd_result_size')
+            received_size = 0
+            cmd_result = b""
+            while received_size < cmd_result_size:
+                if cmd_result_size - received_size < 8192:
+                    data = self.sock.recv(cmd_result_size - received_size)
+                else:
+                    data = self.sock.recv(8192)
+                cmd_result += data
+                received_size += len(data)
+            else:
+                print(cmd_result.decode('utf-8'))#mac
+
+    def _cd(self,cmd_args):
+        if self.parameter_check(cmd_args, exact_args=1):
+            target_dir = cmd_args[0]
+            self.send_msg('cd',target_dir=target_dir)
+            response = self.get_response()
+            if response.get('status_code') == 350:
+                self.terminal_display = "[%s]"%response.get('current_dir')
+            print(response)
+
+    def _get(self,cmd_args):
+        """download file from ftp server"""
+        if self.parameter_check(cmd_args,min_args=1):
+            filename = cmd_args[0]
+            self.send_msg(action_type='get',filename=filename)
+
+            response = self.get_response()
+            if response.get('status_code') == 301:
+                file_size = response.get('file_size')
+                received_size = 0
+                with open(filename) as f:
+                    while received_size < file_size:
+                        if file_size - received_size < 8192:
+                            data = self.sock.recv(file_size - received_size)
+                        else:
+                            data = self.sock.recv(8192)
+                        received_size += len(data)
+                        f.write(data)
+                    else:
+                        print("---file [%s] rece done, received size [%s]---"%filename,file_size)
+                        f.close()
+            else:
+                print(response.get('status_msg'))
+
 
 if __name__ == "__main__":
     client = FTPClient()
