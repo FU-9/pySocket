@@ -9,6 +9,7 @@
 ##### 6、文件传输过程中显示进度条
 
 >server端执行 python3 fu_server.py start
+
 >client端执行 python3 fu_client.py -s localhost -P port
 
 >ftp功能命令
