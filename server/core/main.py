@@ -1,8 +1,10 @@
 #!_*_coding:utf-8_*_
 import socket
 import json
+import os
 import configparser
 import hashlib
+import subprocess
 from conf import settings
 
 
@@ -12,7 +14,11 @@ class FTPServer:
     STATUS_CODE = {
         200: "Passed authentication!",
         201: "Wrong username or password!",
-        300: "File does not exist!"
+        300: "File does not exist!",
+        301: "File exist, and this msg include the file size!",
+        302: "This msg include the msg size!",
+        350: "Dir changed ",
+        351: "Dir doesnt exist"
     }
 
     MSG_SIZE = 1024 #消息最长1024
@@ -23,6 +29,8 @@ class FTPServer:
         self.sock.bind((settings.HOST,settings.PORT))
         self.sock.listen(settings.MAX_SOCKET_LISTEN)
         self.accounts = self.load_accounts()
+        self.user_obj = None
+        self.user_current_dir = ""
 
     def run_forever(self):
         """启动"""
@@ -34,14 +42,14 @@ class FTPServer:
 
     def handle(self):
         while True:
-            raw_data = self.request.recv(1024)
+            raw_data = self.request.recv(self.MSG_SIZE)
 
             if not raw_data:
                 print("connection %s:%s is lost .." %self.addr)
                 del self.request,self.addr
                 break
 
-            data = json.loads(raw_data)
+            data = json.loads(raw_data.decode('utf-8'))
             action_type = data.get('action_type')
 
             if action_type:
@@ -66,13 +74,13 @@ class FTPServer:
             md5_obj.update(password.encode('utf-8'))
             md5_pwd = md5_obj.hexdigest()
             if md5_pwd == _password:
-                print("passed authentication")
+                self.user_obj = self.accounts[username]
+                self.user_obj['home'] = os.path.join(settings.USER_HOME_DIR,username)
+                self.user_current_dir = self.user_obj['home']
                 return True
             else:
-                print("wrong username or password")
                 return False
         else:
-            print("user does not exist")
             return False
 
     def send_response(self,status_code,*args,**kwargs):
@@ -95,3 +103,43 @@ class FTPServer:
             self.send_response(status_code=200)
         else:
             self.send_response(status_code=201)
+
+    def _get(self,data):
+        """client download file through this method"""
+        filename = data.get('filename')
+        full_path = os.path.join(self.user_obj['home'],filename)
+        if os.path.isfile(full_path):
+            filesize = os.stat(full_path).st_size
+            self.send_response(301,file_size=filesize)
+            f = open(full_path,'rb')
+            for line in f:
+                self.request.send(line)
+            else:
+                print('file end done ..',full_path)
+            f.close()
+        else:
+            self.send_response(300)
+
+    def _ls(self,data):
+        """run dir command and send result to client"""
+        cmd_obj = subprocess.Popen('ls %s'%self.user_current_dir,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        stdout = cmd_obj.stdout.read()
+        stderr = cmd_obj.stderr.read()
+
+        cmd_result = stdout + stderr
+        if not cmd_result:
+            cmd_result = b"current dir has no file at all."
+
+        self.send_response(302,cmd_result_size=len(cmd_result))
+        self.request.sendall(cmd_result)
+
+    def _cd(self,data):
+        target_dir = data.get('target_dir')
+        full_path = os.path.join(self.user_current_dir,target_dir)
+        if os.path.isdir(full_path):
+            self.user_current_dir = full_path
+            relative_current_dir = self.user_current_dir.replace(self.user_obj['home'],"")
+            self.send_response(350,current_dir=self.user_current_dir)
+        else:
+            self.send_response(351)
+
